@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: solis-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: SOLIS_KEYID
+        fromSecret: solis_keyid
+      - key: SOLIS_SECRET
+        fromSecret: solis_secret
+      - key: SOLIS_USERID
+        fromSecret: solis_userid
