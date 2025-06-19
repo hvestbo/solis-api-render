@@ -15,11 +15,11 @@ def fetch_data():
     timestamp = str(int(time.time() * 1000))
     params = {'pageNo': 1, 'pageSize': 1}
     param_str = '&'.join(f'{k}={params[k]}' for k in sorted(params))
+    sign_str = SOLIS_KEYID + timestamp + param_str + SOLIS_SECRET
     print("DEBUG SIGN:", sign_str)
     print("DEBUG PARAMS:", param_str)
     print("DEBUG HEADERS:", headers)
     print("DEBUG BODY:", params)
-    sign_str = SOLIS_KEYID + timestamp + param_str + SOLIS_SECRET
     sign = hmac.new(SOLIS_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest().upper()
     headers = {
         'Content-Type': 'application/json',
