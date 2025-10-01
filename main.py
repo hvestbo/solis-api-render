@@ -14,7 +14,8 @@ def sign_headers(params: dict):
     ts = str(int(time.time() * 1000))
     pstr = "&".join(f"{k}={params[k]}" for k in sorted(params))
     sign_str = f"{SOLIS_KEYID}{ts}{pstr}{SOLIS_SECRET}"
-    signature = hmac.new(SOLIS_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest().upper()
+    signature = hashlib.sha256(sign_str.encode()).hexdigest().upper()
+
 
     http_date = formatdate(timeval=None, usegmt=True)
 
