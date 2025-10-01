@@ -6,52 +6,67 @@ app = Flask(__name__)
 
 API_ID     = os.getenv("SOLIS_KEYID", "").strip()
 API_SECRET = os.getenv("SOLIS_SECRET", "").strip()
-BASE       = "https://www.soliscloud.com:13333"
 
-# Hjelpefunksjoner
+HOSTS = [
+    "https://api.soliscloud.com:13333",
+    "https://www.soliscloud.com:13333",
+    "https://eu.soliscloud.com:13333",
+]
+
+CT_VARIANTS = [
+    "application/json;charset=UTF-8",
+    "application/json; charset=UTF-8",
+]
+
 def content_md5_b64(body_bytes: bytes) -> str:
     md5 = hashlib.md5()
     md5.update(body_bytes)
     return base64.b64encode(md5.digest()).decode()
 
-def make_sign(method: str, content_md5: str, content_type: str, date_str: str, resource: str) -> str:
-    canonical = f"{method}\n{content_md5}\n{content_type}\n{date_str}\n{resource}"
+def sign_v2(method: str, cmd5: str, ctype: str, date_str: str, resource: str) -> str:
+    canonical = f"{method}\n{cmd5}\n{ctype}\n{date_str}\n{resource}"
     digest = hmac.new(API_SECRET.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha1).digest()
     return base64.b64encode(digest).decode()
 
-def post_json_try(resource: str, body: dict, content_type_variant: str):
-    # JSON må være helt kompakt (ingen ekstra whitespace), ellers matcher ikke MD5
-    body_str   = json.dumps(body, separators=(",", ":"))
+def post_json(host: str, resource: str, body: dict, ctype: str, timeout=20):
+    body_str   = json.dumps(body, separators=(",", ":"))  # eksakt JSON
     body_bytes = body_str.encode("utf-8")
     date_str   = formatdate(timeval=None, usegmt=True)
     cmd5       = content_md5_b64(body_bytes)
-    sign       = make_sign("POST", cmd5, content_type_variant, date_str, resource)
-
+    sign       = sign_v2("POST", cmd5, ctype, date_str, resource)
     headers = {
-        "Content-Type": content_type_variant,
+        "Content-Type": ctype,
         "Content-MD5": cmd5,
         "Date": date_str,
         "Authorization": f"API {API_ID}:{sign}",
-        "Accept": "application/json"
+        "Accept": "application/json",
     }
+    url = f"{host}{resource}"
+    r = requests.post(url, data=body_bytes, headers=headers, timeout=timeout)
+    return r
 
-    resp = requests.post(f"{BASE}{resource}", data=body_bytes, headers=headers, timeout=20)
-    return resp
+def try_user_station_list():
+    errors = []
+    body = {"pageNo":"1","pageSize":"10"}  # ingen userId i denne v2-varianten
+    resource = "/v1/api/userStationList"
+    for host in HOSTS:
+        for ct in CT_VARIANTS:
+            r = post_json(host, resource, body, ct)
+            if r.status_code == 200:
+                return True, host, ct, r
+            errors.append({
+                "host": host,
+                "contentType": ct,
+                "status": r.status_code,
+                "text": r.text[:800]
+            })
+    return False, None, None, errors
 
-def post_json(resource: str, body: dict):
-    """
-    Prøv først 'application/json;charset=UTF-8'.
-    Noen servere krever 'application/json; charset=UTF-8' (med mellomrom).
-    """
-    variants = ["application/json;charset=UTF-8", "application/json; charset=UTF-8"]
-    last = None
-    for ct in variants:
-        r = post_json_try(resource, body, ct)
-        if r.status_code == 200:
-            return True, ct, r
-        last = (ct, r.status_code, r.text[:2000])
-        # Hvis signen var feil får vi 403/wrong sign – prøv neste variant
-    return False, last[0], last  # (ok=False, brukt Content-Type, (ct, status, text))
+def try_inverter_list(host: str, station_id: str, ct: str):
+    body = {"pageNo":"1","pageSize":"10","stationId": station_id}
+    resource = "/v1/api/inverterList"
+    r = post_json(host, resource, body, ct)
+    return r
 
 @app.after_request
 def add_cors(resp):
@@ -66,16 +81,9 @@ def root():
 
 @app.route("/solis_api")
 def solis_api():
-    # 1) Hent stasjonsliste (verifiserer signaturen)
-    ok, used_ct, res = post_json("/v1/api/userStationList", {"pageNo":"1","pageSize":"10"})
+    ok, host, ct, res = try_user_station_list()
     if not ok:
-        ct, status, text = res
-        return jsonify({
-            "step": "userStationList",
-            "contentTypeTried": used_ct,
-            "error": status,
-            "text": text
-        }), 502
+        return jsonify({"step":"userStationList","tried":res}), 502
 
     try:
         st = res.json()
@@ -84,21 +92,19 @@ def solis_api():
             return jsonify({"step":"userStationList","error":"no stations","raw":st}), 200
         station_id = records[0]["stationId"]
     except Exception as e:
-        return jsonify({"step":"parseStationId","error":str(e),"raw":res.text[:2000]}), 500
+        return jsonify({"step":"parseStationId","error":str(e),"raw":res.text[:800]}), 500
 
-    # 2) Hent invertere på stasjonen
-    ok2, used_ct2, res2 = post_json("/v1/api/inverterList", {"pageNo":"1","pageSize":"10","stationId":station_id})
-    if not ok2:
-        ct, status, text = res2
+    r2 = try_inverter_list(host, station_id, ct)
+    if r2.status_code != 200:
         return jsonify({
-            "step": "inverterList",
-            "contentTypeTried": used_ct2,
-            "error": status,
-            "text": text
+            "step":"inverterList",
+            "hostUsed": host,
+            "contentTypeUsed": ct,
+            "status": r2.status_code,
+            "text": r2.text[:800]
         }), 502
 
-    # Returnér rå inverter-JSON først, så ser vi feltnavnene eksakt
-    return jsonify(res2.json())
+    return jsonify(r2.json())
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
