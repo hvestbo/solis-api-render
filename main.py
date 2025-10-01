@@ -16,7 +16,6 @@ def sign_headers(params: dict):
     sign_str = f"{SOLIS_KEYID}{ts}{pstr}{SOLIS_SECRET}"
     signature = hmac.new(SOLIS_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest().upper()
 
-    # RFC1123-dato, f.eks. "Wed, 01 Oct 2025 12:34:56 GMT"
     http_date = formatdate(timeval=None, usegmt=True)
 
     return {
@@ -24,8 +23,10 @@ def sign_headers(params: dict):
         "keyId": SOLIS_KEYID,
         "sign": signature,
         "timeStamp": ts,
-        "Date": http_date,              # <- viktig
+        "Date": http_date,
+        "Authorization": f"API {SOLIS_KEYID}:{signature}"
     }
+
 
 
 def fetch_inverters():
