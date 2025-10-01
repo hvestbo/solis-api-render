@@ -33,7 +33,7 @@ def sign_headers(params: dict):
 def fetch_inverters():
     params = {"pageNo": 1, "pageSize": 10}
     h = sign_headers(params)
-    r = requests.post(f"{BASE}/v1/api/inverterList", json=params, headers=h, timeout=15)
+    r = requests.post(f"{BASE}/v1/api/inverterList", data=params, headers=h, timeout=15)
     return r.json() if r.status_code == 200 else {"error": r.status_code, "text": r.text}
 
 @app.route("/")
