@@ -10,17 +10,21 @@ BASE = "https://www.soliscloud.com:13333"
 
 def sign_headers(params: dict):
     ts = str(int(time.time() * 1000))
-    sitems = [f"{k}={params[k]}" for k in sorted(params.keys())]
-    pstr = "&".join(sitems)
+    pstr = "&".join(f"{k}={params[k]}" for k in sorted(params))
     sign_str = f"{SOLIS_KEYID}{ts}{pstr}{SOLIS_SECRET}"
     signature = hmac.new(SOLIS_SECRET.encode(), sign_str.encode(), hashlib.sha256).hexdigest().upper()
-    headers = {
+
+    # RFC1123-dato, f.eks. "Wed, 01 Oct 2025 12:34:56 GMT"
+    http_date = formatdate(timeval=None, usegmt=True)
+
+    return {
         "Content-Type": "application/json",
         "keyId": SOLIS_KEYID,
         "sign": signature,
-        "timeStamp": ts
+        "timeStamp": ts,
+        "Date": http_date,              # <- viktig
     }
-    return headers
+
 
 def fetch_inverters():
     params = {"pageNo": 1, "pageSize": 10}
